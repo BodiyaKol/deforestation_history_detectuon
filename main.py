@@ -13,6 +13,7 @@ main.py
 
 from pathlib import Path
 import sys
+import argparse
 
 # ── Шляхи ────────────────────────────────────────────────────────────────────
 DATA_DIR   = Path("data")
@@ -51,16 +52,23 @@ def step_prepare_data() -> None:
 
 
 # ── Крок 2: SVD-пайплайн (Богдан) ────────────────────────────────────────────
-def step_svd_pipeline() -> None:
+def step_svd_pipeline(method: str = "change") -> None:
     """
-    Запускає main_logic_SVD/pipeline.py.
+    Запускає main_logic_SVD/pipeline.py з вибраним методом.
     Результат: output/L, S, Z, anomaly_mask, output_meta
+
+    Parameters:
+    -----------
+    method : str
+        "svd"    — класичний SVD метод
+        "change" — детектор динамічних змін (рекомендовано)
     """
-    print("\n[STEP 2]  SVD-пайплайн — main_logic_SVD")
+    print("\n[STEP 2]  Пайплайн виявлення вирубки")
     print("-" * 45)
+    print(f"[method] {method.upper()}")
 
     from main_logic_SVD import run
-    run(data_dir=DATA_DIR, output_dir=OUTPUT_DIR)
+    run(data_dir=DATA_DIR, output_dir=OUTPUT_DIR, method=method)
 
 
 # ── Крок 3: Відео (Юлія) — placeholder ───────────────────────────────────────
@@ -85,10 +93,24 @@ def step_render_video() -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Детектування вирубок лісу")
+    parser.add_argument(
+        "--method",
+        choices=["svd", "change"],
+        default="change",
+        help="Метод виявлення: svd (класичний) або change (детектор змін, рекомендовано)"
+    )
+    parser.add_argument("--skip-data", action="store_true", help="Пропустити крок 1 (підготовка даних)")
+    parser.add_argument("--skip-video", action="store_true", help="Пропустити крок 3 (рендер відео)")
+    
+    args = parser.parse_args()
+    
     try:
-        step_prepare_data()
-        step_svd_pipeline()
-        step_render_video()
+        if not args.skip_data:
+            step_prepare_data()
+        step_svd_pipeline(method=args.method)
+        if not args.skip_video:
+            step_render_video()
     except FileNotFoundError as e:
         print(f"\n[ERROR] {e}")
         sys.exit(1)
