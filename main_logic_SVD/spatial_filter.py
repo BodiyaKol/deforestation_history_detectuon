@@ -1,32 +1,29 @@
 """
-spatial_filter.py
-─────────────────
-Просторова фільтрація аномалій — відкидаємо точковий шум,
-залишаємо тільки суцільні зв'язні плями (реальна вирубка).
+Spatial filtering of anomalies - removes point noise,
+keeps only solid connected patches (real deforestation).
 
-Ідея:
-  anomaly_mask містить True там де Z-score < threshold.
-  Але хмари, тіні, шум дають ізольовані пікселі.
-  Реальна вирубка — це СУЦІЛЬНА пляма з десятків/сотень пікселів.
+Idea:
+  anomaly_mask has True where Z-score < threshold.
+  But clouds, shadows, noise give isolated pixels.
+  Real deforestation - SOLID patch of dozens/hundreds of pixels.
 
-  Алгоритм:
-    1. Для кожного кадру розгортаємо anomaly_mask у 2D
-    2. scipy.label() знаходить всі зв'язні компоненти (групи пікселів)
-    3. Відкидаємо компоненти менші за MIN_CLUSTER_SIZE
-    4. Результат — тільки великі суцільні плями
+  Algorithm:
+    1. For each frame unfold anomaly_mask to 2D
+    2. scipy.label() finds all connected components (pixel groups)
+    3. Discard components smaller than MIN_CLUSTER_SIZE
+    4. Result - only large solid patches
 """
 
 import numpy as np
 from scipy.ndimage import label, binary_dilation
 
 
-# ── CONFIG ────────────────────────────────────────────────────────────────────
-MIN_CLUSTER_SIZE = 10    # мінімум пікселів у зв'язній групі
-DILATION_ITERS   = 1     # розширення маски перед кластеризацією
-                         # (з'єднує майже-суцільні плями)
+# Config
+MIN_CLUSTER_SIZE = 10    # minimum pixels in connected group
+DILATION_ITERS   = 1     # expand mask before clustering
+                         # (connects almost-solid patches)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 def filter_spatial_noise(
     anomaly_mask: np.ndarray,
     H: int,
@@ -35,46 +32,45 @@ def filter_spatial_noise(
     dilation_iters:   int = DILATION_ITERS,
 ) -> tuple[np.ndarray, dict]:
     """
-    Прибирає ізольовані пікселі з anomaly_mask.
+    Removes isolated pixels from anomaly_mask.
 
     Parameters
-    ----------
     anomaly_mask     : (pixels, frames) bool
-    H, W             : розміри одного знімку
-    min_cluster_size : мінімум пікселів у групі (менші — шум)
-    dilation_iters   : скільки разів розширити маску перед кластеризацією
+    H, W             : dimensions of one image
+    min_cluster_size : minimum pixels in group (smaller - noise)
+    dilation_iters   : how many times to expand mask before clustering
 
     Returns
     -------
-    filtered_mask : (pixels, frames) bool — тільки великі плями
-    stats         : dict з інформацією по кадрах
+    filtered_mask : (pixels, frames) bool - only large patches
+    stats         : dict with info per frame
     """
     n_frames      = anomaly_mask.shape[1]
     filtered_mask = np.zeros_like(anomaly_mask)
     stats         = {"clusters_per_frame": [], "removed_noise_px": []}
 
-    # структурний елемент — 8-зв'язність (діагоналі теж рахуємо)
+    # structural element - 8-connectivity (diagonals count too)
     struct = np.ones((3, 3), dtype=bool)
 
     for t in range(n_frames):
         frame_mask = anomaly_mask[:, t].reshape(H, W)
 
-        # Розширення — з'єднує пікселі що майже стикаються
+        # Expansion - connects pixels that almost touch
         if dilation_iters > 0:
             dilated = binary_dilation(frame_mask, iterations=dilation_iters)
         else:
             dilated = frame_mask.copy()
 
-        # Кластеризація зв'язних компонент
+        # Clustering connected components
         labeled, n_components = label(dilated, structure=struct)
 
-        # Залишаємо тільки великі кластери
+        # Keep only large clusters
         clean_frame   = np.zeros((H, W), dtype=bool)
         valid_clusters = 0
 
         for cluster_id in range(1, n_components + 1):
             cluster_pixels = (labeled == cluster_id)
-            # Перетинаємо з оригінальною маскою (не розширеною)
+            # Intersect with original mask (not dilated)
             original_pixels = cluster_pixels & frame_mask
             if original_pixels.sum() >= min_cluster_size:
                 clean_frame   |= original_pixels
@@ -89,8 +85,8 @@ def filter_spatial_noise(
     total_removed = sum(stats["removed_noise_px"])
     total_kept    = filtered_mask.sum()
     print(f"[spatial] MIN_CLUSTER_SIZE = {min_cluster_size} px")
-    print(f"[spatial] Видалено шумових пікс : {total_removed}")
-    print(f"[spatial] Залишено аномальних   : {total_kept}")
-    print(f"[spatial] Кластерів по кадрах   : {stats['clusters_per_frame']}")
+    print(f"[spatial] Noise pixels removed: {total_removed}")
+    print(f"[spatial] Anomalous kept      : {total_kept}")
+    print(f"[spatial] Clusters per frame  : {stats['clusters_per_frame']}")
 
     return filtered_mask, stats

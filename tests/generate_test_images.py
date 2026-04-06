@@ -131,6 +131,37 @@ def scenario_sudden(H, W, T, seed=1) -> tuple:
     return X, gt_3d, info
 
 
+def scenario_seasonal(H, W, T, seed=5) -> tuple:
+    """
+    Сезонність: сильні природні коливання NDVI без аномалій.
+    Демонструє, як SVD моделює сезонні тренди у baseline періоді.
+    NDVI коливається від 0.55 до 0.75 з амплітудою 0.1.
+    """
+    rng = np.random.default_rng(seed)
+    base = np.full((H, W), NONFOREST_NDVI)
+    margin = max(2, H // 6)
+    base[margin:H-margin, margin:W-margin] = FOREST_NDVI
+
+    # Сильна сезонність: амплітуда 0.1 замість 0.04
+    seasonal = 0.1 * np.sin(2 * np.pi * np.arange(T) / T)
+    frames   = [base + seasonal[t] + rng.normal(0, NOISE_STD, (H, W))
+                for t in range(T)]
+    X = np.stack(frames).reshape(T, H * W).T
+    X = np.clip(X, -1.0, 1.0)
+
+    # Ніяких аномалій — чиста сезонність
+    gt_3d = np.zeros((H, W, T), dtype=bool)
+
+    info = [
+        "SCENARIO: seasonal variation",
+        f"  Size: {H}x{W}, T={T}",
+        f"  Seasonal amplitude: 0.1 (strong)",
+        f"  No anomalies — demonstrates SVD baseline modeling",
+        f"  Forest NDVI range: ~{FOREST_NDVI-0.1:.2f} to {FOREST_NDVI+0.1:.2f}",
+    ]
+    return X, gt_3d, info
+
+
 def scenario_gradual(H, W, T, seed=2) -> tuple:
     """
     Поступова деградація (пожежа, посуха): NDVI знижується лінійно
@@ -257,11 +288,12 @@ def scenario_mixed(H, W, T, seed=5) -> tuple:
 
 # ─────────────────────────────────────────────────────────────────────────────
 SCENARIOS = {
-    "sudden":   scenario_sudden,
-    "gradual":  scenario_gradual,
+    "sudden":    scenario_sudden,
+    "gradual":   scenario_gradual,
     "scattered": scenario_scattered,
-    "clean":    scenario_clean,
-    "mixed":    scenario_mixed,
+    "clean":     scenario_clean,
+    "mixed":     scenario_mixed,
+    "seasonal":  scenario_seasonal,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
