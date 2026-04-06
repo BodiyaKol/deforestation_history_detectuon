@@ -8,7 +8,7 @@ main.py
 Потік:
   data_input_to_matrix/input_logic.py  →  data/X.npy + data/meta.npy
   main_logic_SVD/pipeline.py           →  output/L, S, Z, anomaly_mask
-  convert_to_video/                    ←  (Юлія) читає output/ та рендерить відео
+  convert_to_video/                    ←  читає output/ та рендерить відео
 """
 
 from pathlib import Path
@@ -81,6 +81,8 @@ def step_render_video() -> None:
     spec   = importlib.util.spec_from_file_location("render", video_script)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+
+    module.run()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
