@@ -1,8 +1,5 @@
 """
-main_logic_SVD/pipeline.py
-──────────────────────────
-Пайплайн виявлення вирубки з єдиним методом:
-SVD на baseline + регресійна детекція плавних змін.
+Main pipeline for deforestation detection using SVD and regression.
 """
 
 from pathlib import Path
@@ -24,7 +21,7 @@ from main_logic_SVD.diagnostics import plot_diagnostics
 
 def run(data_dir: Path, output_dir: Path) -> None:
     """
-    Єдиний пайплайн виявлення вирубки.
+    Unified pipeline for deforestation detection.
     """
     print("=" * 55)
     print("  Deforestation Pipeline [SVD + Regression]")
@@ -83,5 +80,5 @@ def run(data_dir: Path, output_dir: Path) -> None:
     )
 
     print("=" * 55)
-    print(f"  Готово. Результати → {output_dir}/")
+    print(f"  Done. Results -> {output_dir}/")
     print("=" * 55)

@@ -1,10 +1,7 @@
 """
-change_detection.py
-───────────────────
 SVD + regression change detection.
 
-Ми використовуємо SVD лише для побудови baseline з перших кадрів,
-а потім шукаємо плавні зниження NDVI в кожному пікселі через регресію.
+Uses SVD for baseline from first frames, then detects gradual NDVI declines via regression.
 """
 
 import numpy as np
@@ -28,13 +25,13 @@ def compute_baseline(
     variance_threshold: float = VARIANCE_THRESHOLD,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """
-    Обчислює baseline через SVD на перших кадрах.
+    Computes baseline via SVD on first frames.
 
     Returns:
-      L_full        : (pixels, frames) повна baseline-модель для всього ряду
-      baseline_std  : (pixels,) стандартне відхилення залишків на baseline
-      sigma         : сингулярні значення SVD baseline
-      k             : обраний ранг
+      L_full        : (pixels, frames) full baseline model for entire series
+      baseline_std  : (pixels,) std of residuals on baseline
+      sigma         : singular values of SVD baseline
+      k             : chosen rank
     """
     X_baseline = X[:, :window]
     X_for_svd, baseline = _prepare_svd_matrix(X_baseline, forest_mask, nonforest_mask)
@@ -53,7 +50,7 @@ def compute_baseline(
 
 
 def solve_least_squares(A: np.ndarray, Y: np.ndarray) -> np.ndarray:
-    """Розв'язуємо min ||A·coef - Y|| у least squares для всіх стовпців Y."""
+    """Solve min ||A·coef - Y|| in least squares for all Y columns."""
     # A: (T, 2), Y: (pixels, T)
     Q, R = np.linalg.qr(A)
     coef = np.linalg.solve(R, Q.T @ Y.T)
@@ -61,7 +58,7 @@ def solve_least_squares(A: np.ndarray, Y: np.ndarray) -> np.ndarray:
 
 
 def fit_slopes(R: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Розв'язуємо лінійну регресію для кожного пікселя у матричній формі."""
+    """Solve linear regression for each pixel in matrix form."""
     T = R.shape[1]
     t = np.arange(T, dtype=np.float64)
     A = np.vstack([np.ones(T, dtype=np.float64), t]).T
@@ -85,16 +82,16 @@ def compute_regression_changes(
     verbose: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Детекція плавних змін NDVI.
+    Detects gradual NDVI changes.
 
-    1. Створюємо baseline з перших кадрів за допомогою SVD.
-    2. Комп'ютуємо залишки від baseline.
-    3. Виконуємо регресію для кожного пікселя.
-    4. Помічаємо довгі негативні тренди, підтверджені послідовними падіннями.
+    1. Builds baseline from first frames using SVD.
+    2. Computes residuals from baseline.
+    3. Performs regression for each pixel.
+    4. Marks long negative trends confirmed by consecutive drops.
     """
     if verbose:
         print(f"\n[regression] SVD baseline + regression detection")
-        print(f"[regression] baseline window = {baseline_window} кадрів")
+        print(f"[regression] baseline window = {baseline_window} frames")
 
     L_full, baseline_std, sigma, k = compute_baseline(
         X, forest_mask, nonforest_mask, window=baseline_window

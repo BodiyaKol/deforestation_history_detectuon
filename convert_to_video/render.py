@@ -1,6 +1,4 @@
 """
-convert_to_video/render.py
-──────────────────────────
 Visualization and video output.
 
 Reads output/ (results of the SVD pipeline) and generates:
@@ -22,12 +20,11 @@ from matplotlib.patches import Patch
 import imageio.v2 as imageio
 
 
-# ── Шляхи ─────────────────────────────────────────────────────────────────────
+# Paths
 OUTPUT_DIR = Path("output")
 VIDEO_DIR  = Path("output") / "video"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 def load_data():
     Z            = np.load(OUTPUT_DIR / "Z.npy")
     L            = np.load(OUTPUT_DIR / "L.npy")
@@ -43,7 +40,6 @@ def load_data():
     return Z, L, anomaly_mask, H, W, dates
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 def make_zscore_frames(Z, H, W, dates):
     """
     Frames with a Z-score heatmap.
@@ -74,7 +70,7 @@ def make_zscore_frames(Z, H, W, dates):
         for spine in ax.spines.values():
             spine.set_edgecolor("#333333")
 
-        # Підпис кадру
+        # Frame label
         ax.text(0.02, 0.02, f"Frame {i+1}/{Z.shape[1]}",
                 transform=ax.transAxes, color="#c7c7c7",
                 fontsize=9, va="bottom",
@@ -90,7 +86,6 @@ def make_zscore_frames(Z, H, W, dates):
     return frames
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 def make_overlay_frames(Z, anomaly_mask, H, W, dates):
     """
     Frames where an anomaly mask is overlaid on the NDVI background (red).
@@ -98,7 +93,7 @@ def make_overlay_frames(Z, anomaly_mask, H, W, dates):
     """
     frames = []
 
-    # Нормалізуємо Z для фону (0..1)
+    # Normalize Z for background (0..1)
     z_norm = np.clip((Z + 3) / 6, 0, 1)
 
     for i in range(Z.shape[1]):
@@ -122,7 +117,7 @@ def make_overlay_frames(Z, anomaly_mask, H, W, dates):
             color="white", fontsize=14, fontweight="bold", pad=12
         )
 
-        # Легенда
+        # Legend
         legend_els = [
             Patch(facecolor="#22c55e", label="Healthy forest"),
             Patch(facecolor="#dc2626", label="Anomaly (deforestation/fire)"),

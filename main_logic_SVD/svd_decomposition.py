@@ -1,7 +1,5 @@
 """
-svd_decomposition.py
-────────────────────
-Власна реалізація усіченого SVD через степеневий метод (Power Iteration).
+Custom truncated SVD implementation using power iteration method.
 """
 
 import numpy as np
@@ -14,13 +12,13 @@ CONVERGENCE_TOL        = 1e-12
 
 def _power_iteration(A: np.ndarray, n_iter: int = POWER_ITER, seed: int = 0) -> tuple:
     """
-    Знаходить ПЕРШУ сингулярну трійку (u, σ, v) матриці A
-    методом степеневих ітерацій.
+    Finds the FIRST singular triplet (u, sigma, v) of matrix A
+    using power iterations.
 
-    Ідея:
-      v_(t+1) = AᵀA · v_t / ||AᵀA · v_t||
-      Двокроковий варіант щоб не рахувати AᵀA явно:
-        q = A·v,  v_new = Aᵀ·q,  v = v_new/||v_new||
+    Idea:
+      v_(t+1) = A^tA · v_t / ||A^tA · v_t||
+      Two-step variant to avoid computing A^tA explicitly:
+        q = A·v,  v_new = A^t·q,  v = v_new/||v_new||
     """
     rng = np.random.default_rng(seed)
     n   = A.shape[1]
@@ -45,7 +43,7 @@ def _power_iteration(A: np.ndarray, n_iter: int = POWER_ITER, seed: int = 0) -> 
 
 
 def _deflate(A, u, sigma, v):
-    """A_new = A − σ · u · vᵀ  (rank-1 deflation)"""
+    """A_new = A − sigma · u · v^t  (rank-1 deflation)"""
     return A - sigma * np.outer(u, v)
 
 
@@ -65,12 +63,12 @@ def _prepare_svd_matrix(
     nonforest_mask: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Готує вхідну матрицю для SVD, щоб сфокусувати модель на лісі.
+    Prepares input matrix for SVD to focus model on forest.
 
-    - робимо nonforest пікселі постійними по часу
-    - центруємо кожен піксель по першому кадру
-    - підсилюємо довготривалі падіння для forest пікселів
-    - зменшуємо сезонні/позитивні відхилення, щоб SVD не "усереднював" зміни
+    - Makes nonforest pixels constant over time
+    - Centers each pixel by first frame
+    - Amplifies long-term drops for forest pixels
+    - Reduces seasonal/positive deviations so SVD doesn't average changes
     """
     if forest_mask is None or nonforest_mask is None:
         baseline = np.zeros((X.shape[0], 1), dtype=np.float64)
@@ -84,15 +82,15 @@ def _prepare_svd_matrix(
     X_centered = X_init - baseline
     forest_flat = forest_mask.flatten()
 
-    # Підсилюємо довготривалі негативні тренди у лісових пікселях,
-    # щоб SVD приділяла більше уваги реальним вирубкам.
+    # Amplify long-term negative trends in forest pixels,
+    # so SVD pays more attention to real deforestation.
     forest_vals = X_centered[forest_flat, :]
     long_drop = forest_vals[:, -1] < -0.02
     if np.any(long_drop):
         forest_vals[long_drop, :] *= 1.25
 
-    # Зменшуємо позитивні коливання у гістограмах лісу,
-    # щоб сезонні підйоми не ставали частиною фонового L.
+    # Reduce positive fluctuations in forest histograms,
+    # so seasonal rises don't become part of background L.
     forest_vals = np.where(forest_vals > 0.0, forest_vals * 0.5, forest_vals)
     X_centered[forest_flat, :] = forest_vals
 
@@ -108,18 +106,7 @@ def compute_svd_background(
     nonforest_mask: np.ndarray | None = None,
 ) -> tuple:
     """
-    Будує матрицю фону L через усічений SVD (Power Iteration + Deflation).
-
-    L = Σᵢ₌₁ᵏ  σᵢ · uᵢ · vᵢᵀ    (стабільний фон)
-    S = X − L                      (аномалії)
-
-    Ключовий момент:
-      - Знаходимо компоненти одну за одною
-      - Кожного разу робимо deflation: A ← A − σᵢuᵢvᵢᵀ
-      - Зупиняємось коли накопичена дисперсія >= variance_threshold
-      - MIN 2 компоненти — перша описує загальний рівень NDVI,
-        друга — сезонну варіацію. Без мінімум 2 компонент
-        вирубка може потрапити у першу компоненту.
+    Builds background matrix L via truncated SVD (Power Iteration + Deflation).
     """
     effective_threshold = variance_threshold
     effective_max_components = max_components
@@ -143,25 +130,25 @@ def compute_svd_background(
 
         explained = accumulated_var / (total_variance + 1e-14)
 
-        # Мінімум 2 компоненти, потім зупиняємось по дисперсії
+        # Minimum 2 components, then stop by variance
         if idx >= 1 and explained >= effective_threshold:
             break
 
         A = _deflate(A, u, s, v)
 
     all_sigmas = np.array(sigmas)
-    k          = len(sigmas)   # вже обраний ранг
+    k          = len(sigmas)   # already chosen rank
     explained  = accumulated_var / (total_variance + 1e-14)
 
-    print(f"[svd]  Ранг k = {k}  |  пояснена дисперсія = {min(explained, 1.0):.4f}")
-    print(f"[svd]  Перші {min(5, k)} σ: {all_sigmas[:5].round(3)}")
+    print(f"[svd]  Rank k = {k}  |  explained variance = {min(explained, 1.0):.4f}")
+    print(f"[svd]  First {min(5, k)} σ: {all_sigmas[:5].round(3)}")
 
-    # Реконструкція L у центрованому просторі
+    # Reconstruct L in centered space
     L = np.zeros_like(X_for_svd, dtype=np.float64)
     for i in range(k):
         L += sigmas[i] * np.outer(Us[i], Vs[i])
 
-    # Повертаємо L в оригінальний масштаб
+    # Return L to original scale
     L += baseline
     S = X - L
     return L, S, all_sigmas, k

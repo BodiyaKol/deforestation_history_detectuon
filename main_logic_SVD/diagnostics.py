@@ -1,15 +1,13 @@
 """
-diagnostics.py
-──────────────
-Діагностичні графіки для перевірки якості SVD розкладу.
+Diagnostic plots for checking SVD decomposition quality.
 
-Зберігає diagnostics.png у output/ — дивись його після кожного запуску
-щоб переконатись що L і S виглядають розумно.
+Saves diagnostics.png in output/ — check it after each run
+to ensure L and S look reasonable.
 
-Три панелі:
-  1. Сингулярні значення σ — "ліктьова" точка показує де обрізати ранг
-  2. Залишки S на середньому кадрі — мають бути нулі скрізь крім аномалій
-  3. Сумарна карта аномалій — де хоч раз за весь період виявлено зміну
+Three panels:
+  1. Singular values σ — "elbow" point shows where to truncate rank
+  2. Residuals S on middle frame — should be zero everywhere except anomalies
+  3. Total anomaly map — where change was detected at least once
 """
 
 import numpy as np
@@ -32,58 +30,58 @@ def plot_diagnostics(
     title_suffix: str = "SVD",
 ) -> None:
     """
-    Будує та зберігає діагностичний графік (3 панелі).
+    Builds and saves diagnostic plot (3 panels).
 
     Parameters
     ----------
-    sigma        : всі сингулярні значення (может бути порожнім для Change Detection)
-    X            : оригінальна матриця (pixels, frames)
-    L            : low-rank фон
-    Z            : Z-score матриця
-    anomaly_mask : бінарна маска аномалій
-    H, W         : розміри знімку
-    dates        : список дат
-    k            : обраний ранг SVD (0 для Change Detection)
-    output_dir   : куди зберігати
-    title_suffix : за яким методом обчислено ("SVD" або "Change Detection")
+    sigma        : all singular values (may be empty for Change Detection)
+    X            : original matrix (pixels, frames)
+    L            : low-rank background
+    Z            : Z-score matrix
+    anomaly_mask : binary anomaly mask
+    H, W         : image dimensions
+    dates        : list of dates
+    k            : chosen SVD rank (0 for Change Detection)
+    output_dir   : where to save
+    title_suffix : by which method computed ("SVD" or "Change Detection")
     """
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle(f"Deforestation Diagnostics [{title_suffix}]", fontsize=13, fontweight="bold")
 
-    # ── 1. Сингулярні значення (або Z-score stats для Change Detection) ──────
+    # 1. Singular values (or Z-score stats for Change Detection)
     ax = axes[0]
     if len(sigma) > 0:
-        # SVD метод
+        # SVD method
         n_show = min(30, len(sigma))
         ax.semilogy(range(n_show), sigma[:n_show], "o-", color="#2d6a4f", linewidth=1.5, markersize=4)
         ax.axvline(x=k - 1, color="#e63946", linestyle="--", linewidth=1.5, label=f"k = {k}")
-        ax.set_title("Сингулярні значення σ")
+        ax.set_title("Singular values σ")
         ax.set_ylabel("σ  (log scale)")
     else:
-        # Change Detection метод
+        # Change Detection method
         z_values = Z[~np.isnan(Z) & ~np.isinf(Z)].flatten()
         ax.hist(z_values, bins=50, color="#2d6a4f", alpha=0.7, edgecolor="black")
-        ax.axvline(x=-2.5, color="#e63946", linestyle="--", linewidth=1.5, label="Порог")
-        ax.set_title("Z-score розподіл")
-        ax.set_ylabel("Частота")
-    ax.set_xlabel("Компонента" if len(sigma) > 0 else "Z-score")
+        ax.axvline(x=-2.5, color="#e63946", linestyle="--", linewidth=1.5, label="Threshold")
+        ax.set_title("Z-score distribution")
+        ax.set_ylabel("Frequency")
+    ax.set_xlabel("Component" if len(sigma) > 0 else "Z-score")
     ax.legend()
     ax.grid(True, alpha=0.25)
 
-    # ── 2. Залишки на середньому кадрі ──────────────────────────────────────
+    # 2. Residuals on middle frame
     mid = len(dates) // 2
     residuals = (X[:, mid] - L[:, mid]).reshape(H, W)
     ax = axes[1]
     im = ax.imshow(residuals, cmap="RdYlGn", vmin=-0.3, vmax=0.3)
-    ax.set_title(f"S = X − L  (кадр {mid} / {dates[mid]})")
+    ax.set_title(f"S = X − L  (frame {mid} / {dates[mid]})")
     ax.axis("off")
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
-    # ── 3. Сумарна карта аномалій ────────────────────────────────────────────
+    # 3. Total anomaly map
     total_anomaly = anomaly_mask.any(axis=1).reshape(H, W)
     ax = axes[2]
     im2 = ax.imshow(total_anomaly.astype(float), cmap="Reds", vmin=0, vmax=1)
-    ax.set_title(f"Сумарна карта вирубки ({dates[0]} → {dates[-1]})")
+    ax.set_title(f"Total deforestation map ({dates[0]} → {dates[-1]})")
     ax.axis("off")
     plt.colorbar(im2, ax=ax, fraction=0.046, pad=0.04)
 
@@ -91,5 +89,5 @@ def plot_diagnostics(
     out_path = output_dir / "diagnostics.png"
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"[diag] Збережено: {out_path}")
+    print(f"[diag] Saved: {out_path}")
 
