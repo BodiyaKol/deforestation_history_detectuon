@@ -29,37 +29,48 @@ def plot_diagnostics(
     dates: list,
     k: int,
     output_dir: Path,
+    title_suffix: str = "SVD",
 ) -> None:
     """
     Будує та зберігає діагностичний графік (3 панелі).
 
     Parameters
     ----------
-    sigma        : всі сингулярні значення
+    sigma        : всі сингулярні значення (может бути порожнім для Change Detection)
     X            : оригінальна матриця (pixels, frames)
     L            : low-rank фон
     Z            : Z-score матриця
     anomaly_mask : бінарна маска аномалій
     H, W         : розміри знімку
     dates        : список дат
-    k            : обраний ранг SVD
+    k            : обраний ранг SVD (0 для Change Detection)
     output_dir   : куди зберігати
+    title_suffix : за яким методом обчислено ("SVD" або "Change Detection")
     """
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle("SVD Deforestation — Diagnostics", fontsize=13, fontweight="bold")
+    fig.suptitle(f"Deforestation Diagnostics [{title_suffix}]", fontsize=13, fontweight="bold")
 
-    # ── 1. Сингулярні значення ──────────────────────────────────────────────
+    # ── 1. Сингулярні значення (або Z-score stats для Change Detection) ──────
     ax = axes[0]
-    n_show = min(30, len(sigma))
-    ax.semilogy(range(n_show), sigma[:n_show], "o-", color="#2d6a4f", linewidth=1.5, markersize=4)
-    ax.axvline(x=k - 1, color="#e63946", linestyle="--", linewidth=1.5, label=f"k = {k}")
-    ax.set_title("Сингулярні значення σ")
-    ax.set_xlabel("Компонента")
-    ax.set_ylabel("σ  (log scale)")
+    if len(sigma) > 0:
+        # SVD метод
+        n_show = min(30, len(sigma))
+        ax.semilogy(range(n_show), sigma[:n_show], "o-", color="#2d6a4f", linewidth=1.5, markersize=4)
+        ax.axvline(x=k - 1, color="#e63946", linestyle="--", linewidth=1.5, label=f"k = {k}")
+        ax.set_title("Сингулярні значення σ")
+        ax.set_ylabel("σ  (log scale)")
+    else:
+        # Change Detection метод
+        z_values = Z[~np.isnan(Z) & ~np.isinf(Z)].flatten()
+        ax.hist(z_values, bins=50, color="#2d6a4f", alpha=0.7, edgecolor="black")
+        ax.axvline(x=-2.5, color="#e63946", linestyle="--", linewidth=1.5, label="Порог")
+        ax.set_title("Z-score розподіл")
+        ax.set_ylabel("Частота")
+    ax.set_xlabel("Компонента" if len(sigma) > 0 else "Z-score")
     ax.legend()
     ax.grid(True, alpha=0.25)
 
-    # ── 2. Залишки S на середньому кадрі ────────────────────────────────────
+    # ── 2. Залишки на середньому кадрі ──────────────────────────────────────
     mid = len(dates) // 2
     residuals = (X[:, mid] - L[:, mid]).reshape(H, W)
     ax = axes[1]

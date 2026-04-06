@@ -59,11 +59,53 @@ def _choose_rank(sigmas: np.ndarray, threshold: float) -> int:
     return max(1, min(k, len(sigmas)))
 
 
+def _prepare_svd_matrix(
+    X: np.ndarray,
+    forest_mask: np.ndarray | None,
+    nonforest_mask: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Готує вхідну матрицю для SVD, щоб сфокусувати модель на лісі.
+
+    - робимо nonforest пікселі постійними по часу
+    - центруємо кожен піксель по першому кадру
+    - підсилюємо довготривалі падіння для forest пікселів
+    - зменшуємо сезонні/позитивні відхилення, щоб SVD не "усереднював" зміни
+    """
+    if forest_mask is None or nonforest_mask is None:
+        baseline = np.zeros((X.shape[0], 1), dtype=np.float64)
+        return X.astype(np.float64), baseline
+
+    X_init = X.astype(np.float64).copy()
+    nonforest_flat = nonforest_mask.flatten()
+    X_init[nonforest_flat, :] = X_init[nonforest_flat, 0][:, None]
+    baseline = X_init[:, 0:1]
+
+    X_centered = X_init - baseline
+    forest_flat = forest_mask.flatten()
+
+    # Підсилюємо довготривалі негативні тренди у лісових пікселях,
+    # щоб SVD приділяла більше уваги реальним вирубкам.
+    forest_vals = X_centered[forest_flat, :]
+    long_drop = forest_vals[:, -1] < -0.02
+    if np.any(long_drop):
+        forest_vals[long_drop, :] *= 1.25
+
+    # Зменшуємо позитивні коливання у гістограмах лісу,
+    # щоб сезонні підйоми не ставали частиною фонового L.
+    forest_vals = np.where(forest_vals > 0.0, forest_vals * 0.5, forest_vals)
+    X_centered[forest_flat, :] = forest_vals
+
+    return X_centered, baseline
+
+
 def compute_svd_background(
     X: np.ndarray,
     variance_threshold: float = SVD_VARIANCE_THRESHOLD,
     power_iter: int            = POWER_ITER,
     max_components: int        = MAX_COMPONENTS,
+    forest_mask: np.ndarray | None = None,
+    nonforest_mask: np.ndarray | None = None,
 ) -> tuple:
     """
     Будує матрицю фону L через усічений SVD (Power Iteration + Deflation).
@@ -79,16 +121,22 @@ def compute_svd_background(
         друга — сезонну варіацію. Без мінімум 2 компонент
         вирубка може потрапити у першу компоненту.
     """
-    print(f"[svd]  Power Iteration SVD (max_k={max_components}, iters={power_iter}) ...")
+    effective_threshold = variance_threshold
+    effective_max_components = max_components
+    if forest_mask is not None and nonforest_mask is not None:
+        effective_threshold = min(variance_threshold, 0.99)
+        effective_max_components = min(max_components, 6)
 
-    # Важливо: рахуємо total_variance від ОРИГІНАЛЬНОГО X (до deflation)
-    total_variance = float(np.sum(X ** 2))
+    print(f"[svd]  Power Iteration SVD (max_k={effective_max_components}, iters={power_iter}) ...")
 
-    A      = X.astype(np.float64).copy()
+    X_for_svd, baseline = _prepare_svd_matrix(X, forest_mask, nonforest_mask)
+    total_variance = float(np.sum(X_for_svd ** 2))
+
+    A      = X_for_svd.copy()
     Us, Vs, sigmas = [], [], []
     accumulated_var = 0.0
 
-    for idx in range(max_components):
+    for idx in range(effective_max_components):
         u, s, v = _power_iteration(A, n_iter=power_iter, seed=idx)
         Us.append(u); Vs.append(v); sigmas.append(s)
         accumulated_var += s ** 2
@@ -96,7 +144,7 @@ def compute_svd_background(
         explained = accumulated_var / (total_variance + 1e-14)
 
         # Мінімум 2 компоненти, потім зупиняємось по дисперсії
-        if idx >= 1 and explained >= variance_threshold:
+        if idx >= 1 and explained >= effective_threshold:
             break
 
         A = _deflate(A, u, s, v)
@@ -108,10 +156,12 @@ def compute_svd_background(
     print(f"[svd]  Ранг k = {k}  |  пояснена дисперсія = {min(explained, 1.0):.4f}")
     print(f"[svd]  Перші {min(5, k)} σ: {all_sigmas[:5].round(3)}")
 
-    # Реконструкція L
-    L = np.zeros_like(X, dtype=np.float64)
+    # Реконструкція L у центрованому просторі
+    L = np.zeros_like(X_for_svd, dtype=np.float64)
     for i in range(k):
         L += sigmas[i] * np.outer(Us[i], Vs[i])
 
+    # Повертаємо L в оригінальний масштаб
+    L += baseline
     S = X - L
     return L, S, all_sigmas, k

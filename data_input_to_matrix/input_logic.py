@@ -3,9 +3,9 @@ import pandas as pd
 from pystac_client import Client
 import odc.stac
 
-bbox = [23.55, 48.50, 23.60, 48.55]   # ~5×5 км → 500×500 = 250к пікселів
-date_range = "2024-06-01/2024-07-31"  # 2 місяці
-MAX_IMAGES_PER_MONTH = 3              # 3 знімки на місяць = ~6 знімків
+bbox = [23.55, 48.50, 23.60, 48.55]
+date_range = "2024-06-01/2024-07-31"
+MAX_IMAGES_PER_MONTH = 3
 
 client = Client.open("https://earth-search.aws.element84.com/v1")
 
@@ -30,11 +30,12 @@ for item in items:
 
 df = pd.DataFrame(data_info)
 df = df.sort_values(by=['month', 'cloud_cover'])
-
 best_df = df.groupby('month').head(MAX_IMAGES_PER_MONTH)
+
+best_df = best_df.sort_values(by='date')
+
 selected_items = best_df['item'].tolist()
 selected_dates = [d.strftime("%Y-%m-%d") for d in best_df['date']]
-
 dataset = odc.stac.load(
     selected_items,
     bands=["red", "nir"],
