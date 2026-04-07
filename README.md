@@ -29,7 +29,7 @@ Results are saved in `tests/test_results/regression/` with `summary.txt` and ind
 [![Video 1](https://img.youtube.com/vi/VIDEO_ID_1/0.jpg)](https://www.youtube.com/watch?v=VIDEO_ID_1)
 
 ### Video 2 (Pasternak Yullia)
-[![Video 2](https://img.youtube.com/vi/VIDEO_ID_2/0.jpg)](https://www.youtube.com/watch?v=VIDEO_ID_2)
+https://youtu.be/9HvxBRMIaGk
 
 ### Video 3 (Prokopets Maxym)
 [![Video 3](https://img.youtube.com/vi/VIDEO_ID_3/0.jpg)](https://www.youtube.com/watch?v=VIDEO_ID_3)
