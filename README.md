@@ -26,8 +26,7 @@ Results are saved in `tests/test_results/regression/` with `summary.txt` and ind
 ---
 
 ### Video 1 (Kolodchak Bohdan)
-[![Video 1](https://img.youtube.com/vi/VIDEO_ID_1/0.jpg)](https://www.youtube.com/watch?v=VIDEO_ID_1)
-
+https://youtu.be/O4K_FFtC4Qc
 ### Video 2 (Pasternak Yullia)
 https://youtu.be/9HvxBRMIaGk
 
