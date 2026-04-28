@@ -5,7 +5,7 @@ Uses SVD for baseline from first frames, then detects gradual NDVI declines via 
 """
 
 import numpy as np
-from main_logic_SVD.svd_decomposition import _prepare_svd_matrix, _choose_rank
+from main_logic_SVD.svd_decomposition import _prepare_svd_matrix, _choose_rank, compute_svd_background
 
 BASELINE_WINDOW = 3
 VARIANCE_THRESHOLD = 0.95
@@ -50,10 +50,114 @@ def compute_baseline(
 
 
 def solve_least_squares(A: np.ndarray, Y: np.ndarray) -> np.ndarray:
-    """Solve min ||A·coef - Y|| in least squares for all Y columns."""
-    # A: (T, 2), Y: (pixels, T)
-    Q, R = np.linalg.qr(A)
-    coef = np.linalg.solve(R, Q.T @ Y.T)
+    """
+    FULL manual least squares solver.
+
+    Solves:
+        min ||A·coef - Y||
+
+    A : shape (T, 2)
+    Y : shape (pixels, T)
+
+    Returns:
+        coef : shape (2, pixels)
+
+    No np.linalg, no np.dot, no QR from numpy.
+    """
+
+    A = A.astype(float)
+    Y = Y.astype(float)
+
+    rows = A.shape[0]      # T
+    cols = A.shape[1]      # 2
+    pixels = Y.shape[0]
+
+    # -----------------------------------
+    # Helper functions
+    # -----------------------------------
+    def manual_dot(v1, v2):
+        s = 0.0
+        for i in range(len(v1)):
+            s += v1[i] * v2[i]
+        return s
+
+    def manual_norm(v):
+        s = 0.0
+        for i in range(len(v)):
+            s += v[i] * v[i]
+        return s ** 0.5
+
+    def get_col(M, j):
+        col = np.zeros(M.shape[0], dtype=float)
+        for i in range(M.shape[0]):
+            col[i] = M[i, j]
+        return col
+
+    def set_col(M, j, v):
+        for i in range(len(v)):
+            M[i, j] = v[i]
+
+    # -----------------------------------
+    # Classical Gram-Schmidt QR
+    # -----------------------------------
+    Q = np.zeros((rows, cols), dtype=float)
+    R = np.zeros((cols, cols), dtype=float)
+
+    for j in range(cols):
+        v = get_col(A, j)
+
+        for i in range(j):
+            qi = get_col(Q, i)
+            aj = get_col(A, j)
+
+            proj = manual_dot(qi, aj)
+            R[i, j] = proj
+
+            for k in range(rows):
+                v[k] -= proj * qi[k]
+
+        norm_v = manual_norm(v)
+
+        if norm_v < 1e-12:
+            raise ValueError("Columns are linearly dependent.")
+
+        R[j, j] = norm_v
+
+        for k in range(rows):
+            v[k] /= norm_v
+
+        set_col(Q, j, v)
+
+    # -----------------------------------
+    # Compute B = Qᵀ · Yᵀ
+    # shape = (2, pixels)
+    # -----------------------------------
+    B = np.zeros((cols, pixels), dtype=float)
+
+    for i in range(cols):
+        qi = get_col(Q, i)
+
+        for p in range(pixels):
+            s = 0.0
+            for t in range(rows):
+                s += qi[t] * Y[p, t]
+            B[i, p] = s
+
+    # -----------------------------------
+    # Solve R·coef = B
+    # Manual back substitution
+    # -----------------------------------
+    coef = np.zeros((cols, pixels), dtype=float)
+
+    for p in range(pixels):
+        for i in range(cols - 1, -1, -1):
+            s = B[i, p]
+
+            for j in range(i + 1, cols):
+                s -= R[i, j] * coef[j, p]
+
+            coef[i, p] = s / R[i, i]
+
     return coef
 
 
@@ -93,7 +197,7 @@ def compute_regression_changes(
         print(f"\n[regression] SVD baseline + regression detection")
         print(f"[regression] baseline window = {baseline_window} frames")
 
-    L_full, baseline_std, sigma, k = compute_baseline(
+    L_full, baseline_std, sigma, k = compute_svd_background(
         X, forest_mask, nonforest_mask, window=baseline_window
     )
     T = X.shape[1]
