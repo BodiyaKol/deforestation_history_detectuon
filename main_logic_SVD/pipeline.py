@@ -31,7 +31,7 @@ def run(data_dir: Path, output_dir: Path) -> None:
     forest_mask, nonforest_mask = build_forest_masks(X, H, W)
 
     baseline_window = BASELINE_WINDOW
-    L_for_plot, _, sigma, k = compute_baseline(
+    L_for_plot, _, sigma, k = compute_svd_background(
         X,
         forest_mask,
         nonforest_mask,
@@ -53,7 +53,7 @@ def run(data_dir: Path, output_dir: Path) -> None:
     anomaly_clean, _ = filter_spatial_noise(anomaly_mask, H, W)
 
     plot_diagnostics(
-        sigma,
+        np.array([]),
         X,
         L_for_plot,
         Z,

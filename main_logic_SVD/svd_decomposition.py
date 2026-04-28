@@ -8,7 +8,9 @@ SVD_VARIANCE_THRESHOLD = 0.995
 POWER_ITER             = 30
 MAX_COMPONENTS         = 10
 CONVERGENCE_TOL        = 1e-12
-
+BASELINE_WINDOW = 3
+VARIANCE_THRESHOLD = 0.95
+MIN_STD = 0.04
 
 def _power_iteration(A: np.ndarray, n_iter: int = POWER_ITER, seed: int = 0) -> tuple:
     """
@@ -99,56 +101,85 @@ def _prepare_svd_matrix(
 
 def compute_svd_background(
     X: np.ndarray,
-    variance_threshold: float = SVD_VARIANCE_THRESHOLD,
-    power_iter: int            = POWER_ITER,
-    max_components: int        = MAX_COMPONENTS,
-    forest_mask: np.ndarray | None = None,
-    nonforest_mask: np.ndarray | None = None,
-) -> tuple:
+    forest_mask: np.ndarray,
+    nonforest_mask: np.ndarray,
+    window: int = BASELINE_WINDOW,
+    variance_threshold: float = VARIANCE_THRESHOLD,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """
-    Builds background matrix L via truncated SVD (Power Iteration + Deflation).
+    Computes baseline via MANUAL truncated SVD on first frames
+    using Power Iteration + Deflation.
+
+    Returns:
+      L_full        : (pixels, frames) full baseline model for entire series
+      baseline_std  : (pixels,) std of residuals on baseline
+      sigma         : singular values of chosen rank
+      k             : chosen rank
     """
-    effective_threshold = variance_threshold
-    effective_max_components = max_components
-    if forest_mask is not None and nonforest_mask is not None:
-        effective_threshold = min(variance_threshold, 0.99)
-        effective_max_components = min(max_components, 6)
+    # беремо лише перші кадри як baseline-вікно
+    X_baseline = X[:, :window]
 
-    print(f"[svd]  Power Iteration SVD (max_k={effective_max_components}, iters={power_iter}) ...")
+    # та сама підготовка даних
+    X_for_svd, baseline = _prepare_svd_matrix(
+        X_baseline,
+        forest_mask,
+        nonforest_mask
+    )
 
-    X_for_svd, baseline = _prepare_svd_matrix(X, forest_mask, nonforest_mask)
-    total_variance = float(np.sum(X_for_svd ** 2))
+    # копія матриці для дефляції
+    A = X_for_svd.copy()
 
-    A      = X_for_svd.copy()
-    Us, Vs, sigmas = [], [], []
+    max_rank = min(MAX_COMPONENTS, min(A.shape))
+    Us = []
+    sigmas = []
+
+    total_variance = float(np.sum(A ** 2))
     accumulated_var = 0.0
 
-    for idx in range(effective_max_components):
-        u, s, v = _power_iteration(A, n_iter=power_iter, seed=idx)
-        Us.append(u); Vs.append(v); sigmas.append(s)
-        accumulated_var += s ** 2
+    # -----------------------------
+    # Ручний SVD через Power Iteration
+    # -----------------------------
+    for idx in range(max_rank):
+        u, s, v = _power_iteration(A, n_iter=POWER_ITER, seed=idx)
 
+        if s < 1e-12:
+            break
+
+        Us.append(u)
+        sigmas.append(s)
+
+        accumulated_var += s ** 2
         explained = accumulated_var / (total_variance + 1e-14)
 
-        # Minimum 2 components, then stop by variance
-        if idx >= 1 and explained >= effective_threshold:
+        # вибір рангу по variance threshold
+        if explained >= variance_threshold:
             break
 
         A = _deflate(A, u, s, v)
 
-    all_sigmas = np.array(sigmas)
-    k          = len(sigmas)   # already chosen rank
-    explained  = accumulated_var / (total_variance + 1e-14)
+    # якщо нічого не знайшли
+    if len(sigmas) == 0:
+        sigmas = np.array([0.0])
+        U_k = np.zeros((X.shape[0], 1))
+        k = 1
+    else:
+        sigmas = np.array(sigmas, dtype=np.float64)
+        U_k = np.column_stack(Us)
+        k = U_k.shape[1]
 
-    print(f"[svd]  Rank k = {k}  |  explained variance = {min(explained, 1.0):.4f}")
-    print(f"[svd]  First {min(5, k)} σ: {all_sigmas[:5].round(3)}")
+    # -----------------------------
+    # Проєкція всієї часової серії
+    # -----------------------------
+    X_centered = X.astype(np.float64) - baseline
 
-    # Reconstruct L in centered space
-    L = np.zeros_like(X_for_svd, dtype=np.float64)
-    for i in range(k):
-        L += sigmas[i] * np.outer(Us[i], Vs[i])
+    coefficients = U_k.T @ X_centered
+    L_full = U_k @ coefficients + baseline
 
-    # Return L to original scale
-    L += baseline
-    S = X - L
-    return L, S, all_sigmas, k
+    # -----------------------------
+    # Шум baseline-вікна
+    # -----------------------------
+    residual_baseline = X_baseline - L_full[:, :window]
+    baseline_std = np.std(residual_baseline, axis=1)
+    baseline_std = np.maximum(baseline_std, MIN_STD)
+
+    return L_full, baseline_std, sigmas, k
